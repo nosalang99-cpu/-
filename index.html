@@ -1,0 +1,235 @@
+﻿<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>세계 지도 학습</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: "Noto Sans KR", sans-serif;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 350px;
+      height: 100vh;
+    }
+
+    .map-area {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid #ddd;
+      background: #fff;
+    }
+
+    #continentSelect {
+      padding: 6px 8px;
+      font-size: 14px;
+    }
+
+    #map {
+      background: #f4f4f4;
+      flex: 1;
+    }
+
+    .panel {
+      border-left: 1px solid #ddd;
+      padding: 20px;
+    }
+
+    .panel h2 {
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
+
+    .country {
+      fill: #e6e6e6;
+      stroke: #999;
+      stroke-width: 0.5;
+      cursor: pointer;
+    }
+
+    .country:hover {
+      fill: #d0d0d0;
+    }
+
+    .active {
+      fill: #a8c7ff !important;
+    }
+
+    #capital {
+      margin: 8px 0;
+      font-weight: 600;
+    }
+
+    #desc {
+      line-height: 1.5;
+      color: #333;
+    }
+
+    #region {
+      color: #666;
+      margin-top: 4px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <section class="map-area">
+      <div class="toolbar">
+        <label for="continentSelect">대륙:</label>
+        <select id="continentSelect">
+          <option value="All">전체</option>
+          <option value="Asia">아시아</option>
+          <option value="Europe">유럽</option>
+          <option value="Africa">아프리카</option>
+          <option value="North America">북아메리카</option>
+          <option value="South America">남아메리카</option>
+          <option value="Oceania">오세아니아</option>
+          <option value="Antarctica">남극</option>
+        </select>
+      </div>
+      <svg id="map"></svg>
+    </section>
+
+    <div class="panel">
+      <h2 id="countryName">나라를 클릭하세요</h2>
+      <p id="region"></p>
+      <p id="capital"></p>
+      <p id="desc">설명이 여기에 표시됩니다.</p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+
+  <script>
+    const panelWidth = 350;
+    const toolbarHeight = 45;
+
+    const regionKoMap = {
+      "Asia": "아시아",
+      "Europe": "유럽",
+      "Africa": "아프리카",
+      "North America": "북아메리카",
+      "South America": "남아메리카",
+      "Oceania": "오세아니아",
+      "Antarctica": "남극"
+    };
+
+    const svg = d3.select("#map");
+    const width = window.innerWidth - panelWidth;
+    const height = window.innerHeight - toolbarHeight;
+
+    svg.attr("width", width).attr("height", height);
+
+    const projection = d3.geoNaturalEarth1()
+      .scale(width / 6.5)
+      .translate([width / 2, height / 2]);
+
+    const path = d3.geoPath().projection(projection);
+
+    const continentSelectEl = document.getElementById("continentSelect");
+    const nameEl = document.getElementById("countryName");
+    const regionEl = document.getElementById("region");
+    const capitalEl = document.getElementById("capital");
+    const descEl = document.getElementById("desc");
+
+    let descriptions = {};
+    let regionByName = {};
+    let koreanNameByName = {};
+
+    function applyContinentFilter() {
+      const selected = continentSelectEl.value;
+
+      svg.selectAll("path.country")
+        .style("display", d => {
+          if (selected === "All") return null;
+          return d.__region === selected ? null : "none";
+        })
+        .classed("active", false);
+
+      nameEl.textContent = "나라를 클릭하세요";
+      regionEl.textContent = "";
+      capitalEl.textContent = "";
+      descEl.textContent = "설명이 여기에 표시됩니다.";
+    }
+
+    continentSelectEl.addEventListener("change", applyContinentFilter);
+
+    Promise.all([
+      fetch("./data/descriptions.json").then(res => res.json()),
+      fetch("./data/world.geojson").then(res => res.json()),
+      fetch("https://restcountries.com/v3.1/all?fields=name,region,translations,capital").then(res => res.json()).catch(() => [])
+    ])
+      .then(([descriptionData, geoData, regionData]) => {
+        descriptions = descriptionData;
+
+        regionData.forEach(item => {
+          const region = item?.region || "Unknown";
+          const commonName = item?.name?.common;
+          const officialName = item?.name?.official;
+          const koreanName = item?.translations?.kor?.common;
+
+          if (commonName) regionByName[commonName] = region;
+          if (officialName) regionByName[officialName] = region;
+
+          if (koreanName && commonName) koreanNameByName[commonName] = koreanName;
+          if (koreanName && officialName) koreanNameByName[officialName] = koreanName;
+        });
+
+        svg.selectAll("path")
+          .data(geoData.features)
+          .enter()
+          .append("path")
+          .attr("d", path)
+          .attr("class", "country")
+          .each(function(d) {
+            const englishName = d.properties.name;
+            d.__region = regionByName[englishName] || "Unknown";
+            d.__koreanName = koreanNameByName[englishName] || englishName;
+          })
+          .on("click", function(event, d) {
+            d3.selectAll(".country").classed("active", false);
+            d3.select(this).classed("active", true);
+
+            const englishName = d.properties.name;
+            const koreanName = d.__koreanName;
+            const info = descriptions[englishName];
+            const regionKo = regionKoMap[d.__region] || "대륙 정보 없음";
+
+            if (info) {
+              nameEl.textContent = `${koreanName} (${info.capital || "정보 없음"})`;
+              regionEl.textContent = `대륙: ${regionKo}`;
+              capitalEl.textContent = `수도: ${info.capital || "정보 없음"}`;
+              descEl.textContent = info.desc || "설명 정보 없음";
+            } else {
+              nameEl.textContent = koreanName;
+              regionEl.textContent = `대륙: ${regionKo}`;
+              capitalEl.textContent = "수도 정보 없음";
+              descEl.textContent = "설명 정보 없음";
+            }
+          });
+      })
+      .catch(() => {
+        nameEl.textContent = "데이터 로딩 실패";
+        descEl.textContent = "인터넷 연결 상태를 확인하고 새로고침하세요.";
+      });
+  </script>
+</body>
+</html>
+
+
+
+

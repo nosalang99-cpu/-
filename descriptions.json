@@ -1,0 +1,6 @@
+{
+  "South Korea": { "capital": "Seoul", "desc": "동아시아에 위치한 국가입니다." },
+  "Japan": { "capital": "Tokyo", "desc": "동아시아의 섬나라입니다." },
+  "France": { "capital": "Paris", "desc": "서유럽의 국가입니다." },
+  "Brazil": { "capital": "Brasilia", "desc": "남아메리카 최대 면적 국가입니다." }
+}
